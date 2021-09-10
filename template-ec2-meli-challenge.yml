@@ -61,7 +61,7 @@ Resources:
               apt install docker-compose -y
               mkdir /home/ubuntu/meli-challenge/
               cd /home/ubuntu/meli-challenge/
-              curl -s -O <<<https://<URL>/docker-compose.yaml>>> #Pendiente actualizar URL del docker-compose
+              curl -s -O https://raw.githubusercontent.com/DiegoAll/meli-challenge/master/docker-compose.yaml
               docker-compose up -d
 
 # Se crea el recurso de security Group (El mismo que se le asoció a la EC2)

@@ -1,0 +1,104 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This template deploys an ec2 instance and starts a docker app'
+# Parametros que recibe el stack al crearse (se escoge la VPC o Subnet que ya tenga en su cuenta de AWS)
+Parameters:
+# VPC donde va estar la EC2
+  pInstanceVPC:
+    Description: VPC para la instancia
+    Type: AWS::EC2::VPC::Id 
+
+# Subred donde va estar la EC2
+
+  pInstanceSubnet:
+    Description: Subred para la instancia
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+# Se Crea el recurso de EC2
+
+  rEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro # Tipo de intancia a usar
+      ImageId: ami-09e67e426f25ce0d7 # ID de la AMI con la que se va a basar la EC2
+      SubnetId: !Ref pInstanceSubnet # Subred donde va estar desplegada la EC2
+      SecurityGroupIds: # Security Groups que va tomar la EC2
+        - !Ref rSecurityGroupEC2 
+      IamInstanceProfile:  # Rol que va tomar la EC2 a desplegar
+        Ref: rInstanceProfile
+      Tags: # Etiquetas de la EC2
+      - Key: Name
+        Value: !Ref 'AWS::StackName'
+# UserData --> Comandos a lanzar cuando se cree la EC2              
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash -xe
+            exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              echo "Se actualiza repositorio y se instala paquetes necesarios para instalar docker"
+
+              sudo apt update -y
+              sudo apt install software-properties-common ca-certificates curl gnupg-agent apt-transport-https -y
+
+              echo "Se agrega repositorio"
+
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo add-apt-repository \
+              "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+              $(lsb_release -cs) \
+              stable"
+
+              echo "Se Instala Docker"
+
+              sudo apt update -y
+              sudo apt install docker-ce docker-ce-cli containerd.io -y
+
+              echo "Se asignan privilegios"
+
+              sudo usermod -aG docker ubuntu
+              echo "Se Instala Docker-compose"
+              apt install docker-compose -y
+              mkdir /home/ubuntu/meli-challenge/
+              cd /home/ubuntu/meli-challenge/
+              curl -s -O <<<https://<URL>/docker-compose.yaml>>> #Pendiente actualizar URL del docker-compose
+              docker-compose up -d
+
+# Se crea el recurso de security Group (El mismo que se le asoció a la EC2)
+  rSecurityGroupEC2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow access to the API
+      GroupName: !Join ["-", [!Ref 'AWS::StackName' , "sg-api-ec2"]] # Nombre del grupo del SG
+      VpcId: !Ref pInstanceVPC # VPC donde va estar desplegado el SG
+
+      SecurityGroupIngress: #Reglas de entrada del SG
+        - IpProtocol: tcp
+          FromPort: "9000"
+          ToPort: "9000"
+          CidrIp: "190.240.16.138/32" #Ip pública para consumir la API
+      Tags:
+      - Key: Name
+        Value:  !Join ["-", [!Ref 'AWS::StackName' , "sg-api-ec2"]]
+# Se crea  el IntanceProfile , a este recurso se le asocia el Rol de IAM que esta definido más adelante
+  rInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles: [!Ref rInstanceRoles]      
+# Se crea el Rol de IAM
+  rInstanceRoles:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:  # Se le asocian politicas administradas de AWS
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy # Politica para las metricas de CloudWatch
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess # Politica para el servicio SSM (se usa para poderse conectar por sesion manager y no abrir ssh)
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: / 
